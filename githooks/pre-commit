@@ -1,0 +1,25 @@
+#!/bin/sh
+# Local safeguard against accidentally committing API keys/secrets.
+# Not run automatically until installed — see scripts/install-git-hooks.sh.
+
+if git diff --cached --name-only | grep -qx '\.env'; then
+  echo "ERROR: .env is staged for commit. This file holds real API keys and must never be committed."
+  echo "Run: git restore --staged .env"
+  exit 1
+fi
+
+# Flag lines added by this commit that look like a hardcoded key/token/secret,
+# e.g. a value pasted directly into a .py/.yml file instead of read from
+# os.environ or a GitHub Actions secret.
+PATTERN='AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|(api[_-]?key|secret|token)[^=:]{0,10}[:=][^,;]{0,3}[A-Za-z0-9_-]{16,}'
+
+MATCHES=$(git diff --cached -U0 | grep -E '^\+' | grep -vE '^\+\+\+' | grep -iE "$PATTERN")
+
+if [ -n "$MATCHES" ]; then
+  echo "ERROR: This commit looks like it contains a hardcoded API key/secret:"
+  echo "$MATCHES"
+  echo "Move it to your local .env file (gitignored) or a GitHub Actions secret instead."
+  exit 1
+fi
+
+exit 0

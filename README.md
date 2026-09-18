@@ -29,6 +29,17 @@ on demand.
 
 ## One-time setup
 
+### 0. Install the local commit safeguard (recommended)
+
+```bash
+bash scripts/install-git-hooks.sh
+```
+
+This installs a pre-commit hook (from `githooks/pre-commit`, since Git
+doesn't version `.git/hooks` itself) that blocks any commit which stages
+`.env` or contains a hardcoded key/token/secret-shaped string. It's a local
+safeguard only — re-run this once after every fresh clone.
+
 ### 1. TMDb API key
 
 1. Create an account at [themoviedb.org](https://www.themoviedb.org/).
