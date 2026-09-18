@@ -6,58 +6,35 @@ writes it all to an Excel file. Runs weekly via GitHub Actions, and can be
 refreshed on demand.
 
 This repo is public, but your watchlist and the generated spreadsheet are
-not — see "Keeping your data private" below before you set anything up.
+not.
 
-## Why this reads from a CSV instead of scraping IMDb live
+## Tools & technologies used
 
-This project originally fetched the watchlist directly from IMDb's page.
-That turned out to be blocked by an AWS WAF "Human Verification" challenge
-— a CAPTCHA-style control aimed specifically at automated browsers, not
-just occasional IP-based bot detection. Defeating that kind of check isn't
-something this project does, even against your own public data, so there's
-no way to pull the watchlist programmatically at all right now.
+**Language & runtime**
+- Python 3.11+ (GitHub Actions runs 3.12)
 
-Instead, you export your watchlist yourself (a normal, authenticated action
-in your own real browser — not scraping) and drop the resulting CSV into a
-private data repo (see "Keeping your data private" below — this code repo
-is public, so your watchlist never lives here). Everything else — TMDb
-lookups, YouTube search, the Excel output, the weekly schedule — is still
-fully automated; only the watchlist snapshot itself needs a manual refresh
-whenever you add or remove titles.
+**Core libraries**
+- [`requests`](https://requests.readthedocs.io/) — HTTP calls to TMDb and YouTube, with retry/backoff built in
+- [`openpyxl`](https://openpyxl.readthedocs.io/) — building the `.xlsx` output: tier colors, merged section dividers, embedded poster images, hyperlinks
+- [`Pillow`](https://pillow.readthedocs.io/) — resizing poster thumbnails before they're embedded
+- [`python-dotenv`](https://github.com/theskumar/python-dotenv) — loading a local `.env` file for development
+- [`pytest`](https://docs.pytest.org/) (dev only) — the test suite (`tests/`)
 
-## Keeping your data private
+**External APIs**
+- [TMDb API](https://developer.themoviedb.org/docs) — matching titles by IMDb ID and pulling US watch-provider data
+- [YouTube Data API v3](https://developers.google.com/youtube/v3) — heuristic free-movie search
 
-This code repo is public, but your watchlist contents and the generated
-spreadsheet are personal — nobody browsing this repo should be able to see
-either one. So neither file ever lives here: they live in a **second,
-private** GitHub repo (e.g. `imdb-watch-tracker-data`), which this repo's
-workflow reads from and writes to using a scoped access token. This repo's
-own git history never contains your data, by construction.
+**Data source**
+- IMDb's own **watchlist CSV export** feature — a manual, authenticated export you perform yourself
 
-To set this up (one time):
+**Automation & hosting**
+- **GitHub Actions** — the scheduled (weekly) and on-demand (`workflow_dispatch`) pipeline runs
+- **GitHub** — this public code repo, plus a private companion repo for personal data
+- **GitHub CLI (`gh`)** — used to create the repo, authenticate, and trigger on-demand runs from a terminal
+- **Git** — plus a custom local pre-commit hook (`githooks/pre-commit`, installed via `scripts/install-git-hooks.sh`) that blocks commits containing `.env` or key-shaped strings
 
-1. Create a new **private** GitHub repo, e.g. `imdb-watch-tracker-data`.
-   It can start completely empty.
-2. Clone it locally, somewhere convenient — the examples below assume it's
-   a sibling folder next to this repo.
-3. Generate a fine-grained [personal access
-   token](https://github.com/settings/personal-access-tokens/new) scoped to
-   **only** that private repo, with **Contents: Read and write** permission
-   and nothing else.
-4. In *this* (public) repo's settings — **Settings → Secrets and variables
-   → Actions**:
-   - **Secrets** → add `DATA_REPO_PAT` with that token.
-   - **Variables** → add `DATA_REPO` with the private repo's
-     `owner/repo-name` (e.g. `tsanguw/imdb-watch-tracker-data`).
-5. Locally, point `WATCHLIST_CSV_PATH` and `OUTPUT_PATH` in your `.env` at
-   your local clone of the private repo (see `.env.example`), not at
-   `data/` in this repo.
-
-From then on: export your watchlist CSV into your private repo's clone,
-commit and push *that* repo whenever you update it, and both the scheduled
-and on-demand GitHub Actions runs will read from and write back to it
-automatically. `data/` in this repo is gitignored specifically so nothing
-personal ends up here by accident.
+**Built with**
+- [Claude Code](https://claude.com/claude-code) (Anthropic) — used interactively throughout to design, build, test, and debug this project
 
 ## How it works
 
@@ -120,7 +97,7 @@ safeguard only — re-run this once after every fresh clone.
 2. Use the list's **Export** option (in the "..." / options menu) to
    download a CSV.
 3. Save it as `imdb_watchlist_export.csv` in your **private data repo's**
-   local clone (see "Keeping your data private" above) — not in this repo.
+   local clone — not in this repo.
 4. Commit and push *the private repo* whenever you add/remove titles — the
    weekly job just reads whatever's currently there, it doesn't fetch a
    fresh copy itself.
@@ -135,8 +112,7 @@ clear error listing the columns it actually found — update
 
 In this (public) repo: **Settings → Secrets and variables → Actions**:
 
-- **Secrets** → add `TMDB_API_KEY`, `YOUTUBE_API_KEY`, and `DATA_REPO_PAT`
-  (the token from "Keeping your data private" above).
+- **Secrets** → add `TMDB_API_KEY`, `YOUTUBE_API_KEY`, and `DATA_REPO_PAT`.
 - **Variables** → add `DATA_REPO` (your private repo's `owner/repo-name`).
 
 ### 5. Fill in the YouTube channel allowlist (optional but recommended)
@@ -195,6 +171,22 @@ just leave it local if you're only checking something once. Add
 pip install -r requirements-dev.txt
 pytest
 ```
+## Why this reads from a CSV instead of scraping IMDb live
+
+This project originally fetched the watchlist directly from IMDb's page.
+That turned out to be blocked by an AWS WAF "Human Verification" challenge
+— a CAPTCHA-style control aimed specifically at automated browsers, not
+just occasional IP-based bot detection. Defeating that kind of check isn't
+something this project does, even against your own public data, so there's
+no way to pull the watchlist programmatically at all right now.
+
+Instead, you export your watchlist yourself (a normal, authenticated action
+in your own real browser — not scraping) and drop the resulting CSV into a
+private data repo — this code repo is public, so your watchlist never
+lives here. Everything else — TMDb
+lookups, YouTube search, the Excel output, the weekly schedule — is still
+fully automated; only the watchlist snapshot itself needs a manual refresh
+whenever you add or remove titles.
 
 ## Known limitations
 
