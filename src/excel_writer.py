@@ -4,20 +4,26 @@ always writes to the same path, overwriting whatever was there before.
 Rows are grouped into availability tiers (free options first, "Not found"
 last) with a labeled, colored section divider between each group, and
 color-coded so the sheet is scannable at a glance without reading every
-cell.
+cell. Each row also carries an embedded poster thumbnail when one was
+downloaded successfully (see poster_fetcher.py) — a missing poster just
+leaves that cell blank, it's cosmetic and never blocks the rest of the row.
 """
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from typing import List, Tuple
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .models import WatchlistTitle
+from .poster_fetcher import POSTER_SIZE
 
 HEADERS = [
+    "Poster",
     "Title",
     "Year",
     "Subscription Services",
@@ -27,7 +33,14 @@ HEADERS = [
     "Last Checked",
 ]
 
-COLUMN_WIDTHS = [32, 8, 28, 28, 28, 45, 20]
+COLUMN_WIDTHS = [7, 32, 8, 28, 28, 28, 45, 20]
+
+TITLE_COLUMN = 2  # 1-indexed; keep in sync with HEADERS above
+
+# Sized to comfortably contain a POSTER_SIZE image with a little padding.
+# Excel's column-width/row-height units aren't literally pixels, so these
+# are approximations tuned to look right, not an exact conversion.
+POSTER_ROW_HEIGHT = 54
 
 NOT_FOUND = "Not found"
 NONE_LABEL = "—"  # em dash
@@ -91,6 +104,7 @@ def _row_values(title: WatchlistTitle) -> list:
         free_ad = _join(title.free_ad_supported)
 
     return [
+        "",  # Poster — image is overlaid on this cell separately, not a text value
         title.title,
         title.year or "",
         subscription,
@@ -145,6 +159,7 @@ def write_excel(titles: List[WatchlistTitle], output_path: str) -> None:
 
         ws.append(_row_values(title))
         row_idx = ws.max_row
+        ws.row_dimensions[row_idx].height = POSTER_ROW_HEIGHT
 
         for col in range(1, n_cols + 1):
             cell = ws.cell(row=row_idx, column=col)
@@ -152,9 +167,14 @@ def write_excel(titles: List[WatchlistTitle], output_path: str) -> None:
             cell.fill = PatternFill("solid", fgColor=shade)
             cell.border = THIN_BORDER
 
-        title_cell = ws.cell(row=row_idx, column=1)
+        title_cell = ws.cell(row=row_idx, column=TITLE_COLUMN)
         title_cell.hyperlink = f"https://www.imdb.com/title/{title.imdb_id}/"
         title_cell.font = Font(color="0563C1", underline="single")
+
+        if title.poster_image:
+            img = XLImage(BytesIO(title.poster_image))
+            img.width, img.height = POSTER_SIZE
+            ws.add_image(img, f"A{row_idx}")
 
     for idx, width in enumerate(COLUMN_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = width

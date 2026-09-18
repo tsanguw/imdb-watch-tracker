@@ -6,11 +6,23 @@ title/name, to avoid false positives on similarly-named titles.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import requests
 
 TMDB_BASE = "https://api.themoviedb.org/3"
+# TMDb's `/find` and detail endpoints return a poster_path fragment (e.g.
+# "/abc123.jpg"), not a full URL — this is the base to prepend. w185 is a
+# small, fixed-width thumbnail size, plenty for an Excel row.
+TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w185"
+
+# IMDb's watchlist CSV export uses these human-readable "Title Type" values
+# (confirmed against a real export) for anything that's an ongoing/episodic
+# TV show, as opposed to a single self-contained program. TMDb's /find can
+# return spurious, empty entries in *both* movie_results and tv_results for
+# the same IMDb ID (observed in practice for at least one real show), so
+# this match matters for correctness, not just disambiguation on paper.
+TV_SERIES_TITLE_TYPES = {"tv series", "tv mini series", "tv miniseries", "tv special"}
 
 
 class TMDbError(RuntimeError):
@@ -22,6 +34,13 @@ class ProviderResult:
     subscription: List[str] = field(default_factory=list)
     rent_buy: List[str] = field(default_factory=list)
     free_ad_supported: List[str] = field(default_factory=list)
+
+
+@dataclass
+class FindResult:
+    tmdb_id: int
+    media_type: str  # "movie" or "tv"
+    poster_url: Optional[str] = None
 
 
 class TMDbClient:
@@ -45,31 +64,36 @@ class TMDbClient:
             )
         return response.json()
 
-    def find_by_imdb_id(self, imdb_id: str, title_type: str) -> Optional[Tuple[int, str]]:
-        """Returns (tmdb_id, media_type) or None if there's no match at all.
+    def find_by_imdb_id(self, imdb_id: str, title_type: str) -> Optional[FindResult]:
+        """Returns a FindResult, or None if there's no match at all.
 
-        `title_type` is IMDb's titleType.id (e.g. "movie", "tvSeries") and
-        is used only to disambiguate when TMDb returns both a movie and a
-        tv result for the same IMDb ID — it never drives the ID match
-        itself.
+        `title_type` is IMDb's CSV export "Title Type" value (e.g. "Movie",
+        "TV Series") and is used only to disambiguate when TMDb returns
+        both a movie and a tv result for the same IMDb ID — it never drives
+        the ID match itself.
         """
         data = self._get(f"/find/{imdb_id}", external_source="imdb_id")
         movie_results = data.get("movie_results") or []
         tv_results = data.get("tv_results") or []
 
-        wants_tv = title_type in ("tvSeries", "tvMiniSeries", "tvSpecial")
+        def _to_result(item: dict, media_type: str) -> FindResult:
+            poster_path = item.get("poster_path")
+            poster_url = f"{TMDB_POSTER_BASE}{poster_path}" if poster_path else None
+            return FindResult(tmdb_id=item["id"], media_type=media_type, poster_url=poster_url)
+
+        wants_tv = title_type.strip().lower() in TV_SERIES_TITLE_TYPES
 
         if wants_tv and tv_results:
-            return tv_results[0]["id"], "tv"
+            return _to_result(tv_results[0], "tv")
         if not wants_tv and movie_results:
-            return movie_results[0]["id"], "movie"
+            return _to_result(movie_results[0], "movie")
 
         # Fall back to whichever list is non-empty, in case IMDb's
         # titleType and TMDb's classification disagree for an edge case.
         if movie_results:
-            return movie_results[0]["id"], "movie"
+            return _to_result(movie_results[0], "movie")
         if tv_results:
-            return tv_results[0]["id"], "tv"
+            return _to_result(tv_results[0], "tv")
 
         return None
 

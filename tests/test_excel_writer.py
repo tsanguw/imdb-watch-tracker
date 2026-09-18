@@ -1,7 +1,25 @@
+import io
+
 from openpyxl import load_workbook
+from PIL import Image as PILImage
 
 from src.excel_writer import HEADERS, TIER_STYLE, write_excel
 from src.models import WatchlistTitle, YouTubeMatch
+
+# Column indices (0-indexed, matching HEADERS) so tests read clearly and
+# stay correct if columns are reordered.
+POSTER_COL = 0
+TITLE_COL = 1
+SUBSCRIPTION_COL = 3
+RENT_BUY_COL = 4
+FREE_AD_COL = 5
+
+
+def _tiny_png_bytes() -> bytes:
+    image = PILImage.new("RGB", (10, 15), color=(10, 20, 30))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _make_titles():
@@ -15,6 +33,7 @@ def _make_titles():
             subscription=["Netflix"],
             rent_buy=["Amazon Video"],
             free_ad_supported=["Tubi"],
+            poster_image=_tiny_png_bytes(),
         ),
         WatchlistTitle(
             imdb_id="tt2",
@@ -59,8 +78,8 @@ def _make_titles():
 
 def _row_by_title(ws, title_text):
     for row in ws.iter_rows(min_row=2):
-        if row[0].value == title_text:
-            return [c.value for c in row]
+        if row[TITLE_COL].value == title_text:
+            return row
     return None
 
 
@@ -106,12 +125,8 @@ def test_write_excel_groups_and_labels_tiers(tmp_path):
     free_divider_row = dividers[0][0]
     not_found_divider_row = dividers[5][0]
 
-    free_row = next(
-        r for r in ws.iter_rows(min_row=2) if r[0].value == "Has Free Ad-Supported"
-    )[0].row
-    not_found_row = next(
-        r for r in ws.iter_rows(min_row=2) if r[0].value == "Totally Unfound Title"
-    )[0].row
+    free_row = _row_by_title(ws, "Has Free Ad-Supported")[0].row
+    not_found_row = _row_by_title(ws, "Totally Unfound Title")[0].row
 
     assert free_divider_row < free_row < not_found_divider_row < not_found_row
 
@@ -125,9 +140,9 @@ def test_write_excel_not_found_shows_not_found_label(tmp_path):
     ws = wb.active
 
     row = _row_by_title(ws, "Totally Unfound Title")
-    assert row[2] == "Not found"  # Subscription Services
-    assert row[3] == "Not found"  # Rent/Buy
-    assert row[4] == "Not found"  # Free (Ad-Supported)
+    assert row[SUBSCRIPTION_COL].value == "Not found"
+    assert row[RENT_BUY_COL].value == "Not found"
+    assert row[FREE_AD_COL].value == "Not found"
 
 
 def test_write_excel_row_values_and_hyperlink(tmp_path):
@@ -138,8 +153,25 @@ def test_write_excel_row_values_and_hyperlink(tmp_path):
     wb = load_workbook(output_path)
     ws = wb.active
 
-    row = next(r for r in ws.iter_rows(min_row=2) if r[0].value == "Has Free Ad-Supported")
-    assert row[2].value == "Netflix"
-    assert row[3].value == "Amazon Video"
-    assert row[4].value == "Tubi"
-    assert row[0].hyperlink.target == "https://www.imdb.com/title/tt1/"
+    row = _row_by_title(ws, "Has Free Ad-Supported")
+    assert row[SUBSCRIPTION_COL].value == "Netflix"
+    assert row[RENT_BUY_COL].value == "Amazon Video"
+    assert row[FREE_AD_COL].value == "Tubi"
+    assert row[TITLE_COL].hyperlink.target == "https://www.imdb.com/title/tt1/"
+
+
+def test_write_excel_embeds_poster_only_when_available(tmp_path):
+    titles = _make_titles()
+    output_path = tmp_path / "watchlist.xlsx"
+    write_excel(titles, str(output_path))
+
+    wb = load_workbook(output_path)
+    ws = wb.active
+
+    # Only "Has Free Ad-Supported" was given poster_image bytes.
+    assert len(ws._images) == 1
+
+    poster_row = _row_by_title(ws, "Has Free Ad-Supported")[0].row
+    image = ws._images[0]
+    assert image.anchor._from.row == poster_row - 1  # openpyxl anchors are 0-indexed
+    assert image.anchor._from.col == POSTER_COL

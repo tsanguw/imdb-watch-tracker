@@ -21,7 +21,8 @@ class WatchlistTitle:
     title: str
     year: Optional[int]
     title_type: str  # "movie", "tvSeries", "tvMiniSeries", ...
-    poster_url: Optional[str] = None
+    poster_url: Optional[str] = None  # from TMDb, set once a match is found
+    poster_image: Optional[bytes] = None  # downloaded + resized PNG bytes, ready to embed
 
     tmdb_found: bool = False
     tmdb_id: Optional[int] = None

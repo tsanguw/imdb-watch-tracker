@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from . import config
 from .excel_writer import write_excel
+from .poster_fetcher import fetch_poster_image
 from .tmdb_client import TMDbClient, TMDbError
 from .watchlist_csv import WatchlistCSVError, load_watchlist_csv
 from .youtube_client import YouTubeClient, load_allowed_channels
@@ -53,7 +54,11 @@ def run(cfg: config.Config) -> None:
             title.tmdb_found = False
         else:
             title.tmdb_found = True
-            title.tmdb_id, title.tmdb_media_type = match
+            title.tmdb_id, title.tmdb_media_type = match.tmdb_id, match.media_type
+            title.poster_url = match.poster_url
+            if title.poster_url:
+                title.poster_image = fetch_poster_image(title.poster_url, session)
+
             providers = tmdb.get_watch_providers(title.tmdb_id, title.tmdb_media_type)
             title.subscription = providers.subscription
             title.rent_buy = providers.rent_buy
