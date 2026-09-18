@@ -1,0 +1,14 @@
+{
+  "_comment": "Curated allowlist of official studio/distributor channels for the heuristic free-movie YouTube search. Fill in channel_id for each you want checked (empty ones are skipped). To find a channel's ID: open the channel, click 'About', then 'Share channel' -> 'Copy channel ID' (it looks like UCxxxxxxxxxxxxxxxxxxxxxx). Add or remove entries freely.",
+  "channels": [
+    { "name": "Tubi Movies", "channel_id": "" },
+    { "name": "Popcornflix", "channel_id": "" },
+    { "name": "FilmRise", "channel_id": "" },
+    { "name": "Crackle", "channel_id": "" },
+    { "name": "The Roku Channel", "channel_id": "" },
+    { "name": "Sony Pictures Entertainment", "channel_id": "" },
+    { "name": "Warner Bros. Entertainment", "channel_id": "" },
+    { "name": "Lionsgate Movies", "channel_id": "" },
+    { "name": "Paramount Movies", "channel_id": "" }
+  ]
+}

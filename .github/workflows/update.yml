@@ -1,0 +1,50 @@
+name: Update Watchlist
+
+on:
+  schedule:
+    # Mondays 13:00 UTC
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+    inputs:
+      force_youtube_recheck:
+        description: "Re-check YouTube even for titles that already have a free ad-supported match"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Prevent a manual run and the weekly scheduled run from racing each other
+# and committing at the same time — queue instead of cancelling either one.
+concurrency:
+  group: update-watchlist
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tracker
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          IMDB_USER_ID: ${{ vars.IMDB_USER_ID }}
+          FORCE_YOUTUBE_RECHECK: ${{ github.event.inputs.force_youtube_recheck || 'false' }}
+        run: python -m src.main
+
+      - name: Commit updated spreadsheet
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/watchlist.xlsx
+          git diff --cached --quiet && echo "No changes to commit." || git commit -m "Update watchlist tracker [skip ci]"
+          git push
