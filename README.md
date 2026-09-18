@@ -2,8 +2,11 @@
 
 Reads a manually-exported snapshot of your IMDb watchlist, looks up
 streaming availability (TMDb) and a heuristic free-YouTube-movie match, and
-writes it all to `data/watchlist.xlsx`. Runs weekly via GitHub Actions, and
-can be refreshed on demand.
+writes it all to an Excel file. Runs weekly via GitHub Actions, and can be
+refreshed on demand.
+
+This repo is public, but your watchlist and the generated spreadsheet are
+not — see "Keeping your data private" below before you set anything up.
 
 ## Why this reads from a CSV instead of scraping IMDb live
 
@@ -15,18 +18,54 @@ something this project does, even against your own public data, so there's
 no way to pull the watchlist programmatically at all right now.
 
 Instead, you export your watchlist yourself (a normal, authenticated action
-in your own real browser — not scraping) and drop the resulting CSV into
-the repo. Everything else — TMDb lookups, YouTube search, the Excel output,
-the weekly schedule — is still fully automated; only the watchlist snapshot
-itself needs a manual refresh whenever you add or remove titles.
+in your own real browser — not scraping) and drop the resulting CSV into a
+private data repo (see "Keeping your data private" below — this code repo
+is public, so your watchlist never lives here). Everything else — TMDb
+lookups, YouTube search, the Excel output, the weekly schedule — is still
+fully automated; only the watchlist snapshot itself needs a manual refresh
+whenever you add or remove titles.
+
+## Keeping your data private
+
+This code repo is public, but your watchlist contents and the generated
+spreadsheet are personal — nobody browsing this repo should be able to see
+either one. So neither file ever lives here: they live in a **second,
+private** GitHub repo (e.g. `imdb-watch-tracker-data`), which this repo's
+workflow reads from and writes to using a scoped access token. This repo's
+own git history never contains your data, by construction.
+
+To set this up (one time):
+
+1. Create a new **private** GitHub repo, e.g. `imdb-watch-tracker-data`.
+   It can start completely empty.
+2. Clone it locally, somewhere convenient — the examples below assume it's
+   a sibling folder next to this repo.
+3. Generate a fine-grained [personal access
+   token](https://github.com/settings/personal-access-tokens/new) scoped to
+   **only** that private repo, with **Contents: Read and write** permission
+   and nothing else.
+4. In *this* (public) repo's settings — **Settings → Secrets and variables
+   → Actions**:
+   - **Secrets** → add `DATA_REPO_PAT` with that token.
+   - **Variables** → add `DATA_REPO` with the private repo's
+     `owner/repo-name` (e.g. `tsanguw/imdb-watch-tracker-data`).
+5. Locally, point `WATCHLIST_CSV_PATH` and `OUTPUT_PATH` in your `.env` at
+   your local clone of the private repo (see `.env.example`), not at
+   `data/` in this repo.
+
+From then on: export your watchlist CSV into your private repo's clone,
+commit and push *that* repo whenever you update it, and both the scheduled
+and on-demand GitHub Actions runs will read from and write back to it
+automatically. `data/` in this repo is gitignored specifically so nothing
+personal ends up here by accident.
 
 ## How it works
 
-1. **`src/watchlist_csv.py`** reads `data/imdb_watchlist_export.csv` (see
-   "Exporting your watchlist" below). If the file is missing, empty, or
-   missing the columns it expects (IMDb's export format has changed before
-   and could again), it raises loudly and exits nonzero rather than writing
-   an empty/partial result.
+1. **`src/watchlist_csv.py`** reads the watchlist CSV from
+   `WATCHLIST_CSV_PATH` (see "Exporting your watchlist" below). If the file
+   is missing, empty, or missing the columns it expects (IMDb's export
+   format has changed before and could again), it raises loudly and exits
+   nonzero rather than writing an empty/partial result.
 2. **`src/tmdb_client.py`** matches each title to TMDb strictly by IMDb ID
    (never by name), then pulls US watch-provider data, split into
    subscription / rent-buy / free ad-supported.
@@ -35,10 +74,11 @@ itself needs a manual refresh whenever you add or remove titles.
    (`config/youtube_channels.json`). The YouTube API has no "free with ads"
    flag, so this is always labeled unverified in the output — check
    manually before trusting it.
-4. **`src/excel_writer.py`** overwrites `data/watchlist.xlsx` with one row
-   per title: Title, Year, Subscription Services, Rent/Buy, Free
-   (Ad-Supported), Free (YouTube - Unverified), Last Checked. Titles with no
-   TMDb match at all show "Not found" instead of being skipped.
+4. **`src/excel_writer.py`** overwrites the file at `OUTPUT_PATH` with rows
+   grouped into color-coded availability tiers (free options first, "Not
+   found" last), each with: Title, Year, Subscription Services, Rent/Buy,
+   Free (Ad-Supported), Free (YouTube - Unverified), Last Checked. Titles
+   with no TMDb match at all show "Not found" instead of being skipped.
 
 ## One-time setup
 
@@ -79,11 +119,11 @@ safeguard only — re-run this once after every fresh clone.
 1. While signed in to IMDb, open your Watchlist.
 2. Use the list's **Export** option (in the "..." / options menu) to
    download a CSV.
-3. Save it to `data/imdb_watchlist_export.csv` in this repo (overwrite
-   the previous export each time).
-4. Commit and push it whenever you add/remove titles — the weekly job just
-   reads whatever's currently checked in, it doesn't fetch a fresh copy
-   itself.
+3. Save it as `imdb_watchlist_export.csv` in your **private data repo's**
+   local clone (see "Keeping your data private" above) — not in this repo.
+4. Commit and push *the private repo* whenever you add/remove titles — the
+   weekly job just reads whatever's currently there, it doesn't fetch a
+   fresh copy itself.
 
 This project expects at least these columns in that CSV: `Const` (the IMDb
 ID, e.g. `tt0110912`), `Title`, and `Title Type`. If IMDb has changed its
@@ -91,16 +131,13 @@ export format since this was written, the very first run will fail with a
 clear error listing the columns it actually found — update
 `REQUIRED_COLUMNS` in `src/watchlist_csv.py` to match if so.
 
-### 4. GitHub repo secrets
+### 4. GitHub repo secrets and variables
 
-In your GitHub repo: **Settings → Secrets and variables → Actions → Secrets**, add:
+In this (public) repo: **Settings → Secrets and variables → Actions**:
 
-- `TMDB_API_KEY`
-- `YOUTUBE_API_KEY`
-
-No extra setup needed for committing the result back to the repo — the
-workflow uses the built-in `GITHUB_TOKEN` with `permissions: contents:
-write` (already set in `.github/workflows/update.yml`).
+- **Secrets** → add `TMDB_API_KEY`, `YOUTUBE_API_KEY`, and `DATA_REPO_PAT`
+  (the token from "Keeping your data private" above).
+- **Variables** → add `DATA_REPO` (your private repo's `owner/repo-name`).
 
 ### 5. Fill in the YouTube channel allowlist (optional but recommended)
 
@@ -115,11 +152,11 @@ pipeline still runs fine either way.
 
 **Scheduled**: runs automatically every Monday at 13:00 UTC via
 `.github/workflows/update.yml`, reprocessing whatever watchlist CSV is
-currently in the repo and committing the updated `data/watchlist.xlsx`
-back. Useful even without a fresh export, since streaming availability for
-titles already on your list can change week to week. If a run fails,
-GitHub will show it as a failed Actions run (and, depending on your
-notification settings, email you) — nothing fails silently.
+currently in your private data repo and committing the updated spreadsheet
+back there. Useful even without a fresh export, since streaming
+availability for titles already on your list can change week to week. If a
+run fails, GitHub will show it as a failed Actions run (and, depending on
+your notification settings, email you) — nothing fails silently.
 
 **On demand, from GitHub**: the same workflow also has a
 `workflow_dispatch` trigger:
@@ -142,12 +179,13 @@ just as often and just as reliably.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # fill in your TMDB_API_KEY and YOUTUBE_API_KEY
+cp .env.example .env   # fill in your keys and point the paths at your private data repo clone
 python -m src.main
 ```
 
-This writes straight to your local `data/watchlist.xlsx`. Commit/push it
-yourself if you want that copy to become the repo's official version, or
+This writes straight to your local clone of the private data repo (per
+`OUTPUT_PATH` in `.env`). Commit/push *that* repo yourself if you want the
+result to sync back for the next scheduled/on-demand run to build on, or
 just leave it local if you're only checking something once. Add
 `--force-youtube-recheck` to bypass the free-ad-supported skip logic.
 
@@ -162,9 +200,13 @@ pytest
 
 - **Watchlist freshness depends on you re-exporting.** New titles you add
   to your IMDb watchlist won't show up until you re-export the CSV and
-  commit it — the weekly/on-demand runs refresh streaming data for
-  whatever's already in `data/imdb_watchlist_export.csv`, they don't detect
-  watchlist changes on their own.
+  commit it to your private data repo — the weekly/on-demand runs refresh
+  streaming data for whatever's already there, they don't detect watchlist
+  changes on their own.
+- **The `DATA_REPO_PAT` token needs to stay valid.** Fine-grained PATs can
+  be given an expiration date — if you set one, you'll need to regenerate
+  and update the secret when it expires, or the workflow will start failing
+  (visibly, as a failed Actions run — not silently).
 - **IMDb's CSV export format could change.** `src/watchlist_csv.py` expects
   `Const`, `Title`, and `Title Type` columns; if IMDb changes this, the run
   fails loudly with the columns it actually found rather than silently

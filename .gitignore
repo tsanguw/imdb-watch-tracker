@@ -5,3 +5,10 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# Personal watchlist data never belongs in this (public) repo — it lives in
+# a separate private repo instead. Kept here too as a defense-in-depth
+# backstop in case something ever defaults to writing into data/.
+data/imdb_watchlist_export.csv
+data/watchlist.xlsx
+/data-repo/

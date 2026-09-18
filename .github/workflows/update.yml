@@ -1,5 +1,11 @@
 name: Update Watchlist
 
+# Personal watchlist data (the CSV export and the generated spreadsheet)
+# never lives in this repo, since this repo is public. Instead it lives in
+# a separate PRIVATE repo (see README "Keeping your data private"), which
+# this workflow checks out into ./data-repo using a fine-grained PAT scoped
+# to just that repo.
+
 on:
   schedule:
     # Mondays 13:00 UTC
@@ -11,8 +17,11 @@ on:
         type: boolean
         default: false
 
+# The default GITHUB_TOKEN only needs read access to this (public, code-only)
+# repo. Writing the result happens in the private data repo, authenticated
+# separately via DATA_REPO_PAT below.
 permissions:
-  contents: write
+  contents: read
 
 # Prevent a manual run and the weekly scheduled run from racing each other
 # and committing at the same time — queue instead of cancelling either one.
@@ -24,7 +33,15 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code (this public repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout private data repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.DATA_REPO }}
+          token: ${{ secrets.DATA_REPO_PAT }}
+          path: data-repo
 
       - uses: actions/setup-python@v5
         with:
@@ -38,12 +55,15 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           FORCE_YOUTUBE_RECHECK: ${{ github.event.inputs.force_youtube_recheck || 'false' }}
+          WATCHLIST_CSV_PATH: data-repo/imdb_watchlist_export.csv
+          OUTPUT_PATH: data-repo/watchlist.xlsx
         run: python -m src.main
 
-      - name: Commit updated spreadsheet
+      - name: Commit updated spreadsheet to the private data repo
+        working-directory: data-repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/watchlist.xlsx
+          git add watchlist.xlsx
           git diff --cached --quiet && echo "No changes to commit." || git commit -m "Update watchlist tracker [skip ci]"
           git push
