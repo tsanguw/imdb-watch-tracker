@@ -1,4 +1,4 @@
-"""Entry point: scrape -> enrich -> write Excel.
+"""Entry point: read watchlist CSV -> enrich -> write Excel.
 
 Run via `python -m src.main` (locally, with a .env file — see
 .env.example) or from the GitHub Actions workflow (.github/workflows/update.yml),
@@ -12,16 +12,16 @@ from datetime import datetime, timezone
 
 from . import config
 from .excel_writer import write_excel
-from .imdb_scraper import ScraperError, fetch_watchlist
 from .tmdb_client import TMDbClient, TMDbError
+from .watchlist_csv import WatchlistCSVError, load_watchlist_csv
 from .youtube_client import YouTubeClient, load_allowed_channels
 
 
 def run(cfg: config.Config) -> None:
     session = config.make_session()
 
-    print(f"Fetching IMDb watchlist for {cfg.imdb_user_id}...")
-    titles = fetch_watchlist(cfg.imdb_user_id, session)
+    print(f"Reading watchlist from {cfg.watchlist_csv_path}...")
+    titles = load_watchlist_csv(cfg.watchlist_csv_path)
     print(f"Found {len(titles)} titles.")
 
     tmdb = TMDbClient(session, cfg.tmdb_api_key, region=cfg.region)
@@ -97,7 +97,7 @@ def main() -> None:
 
     try:
         run(cfg)
-    except (ScraperError, TMDbError) as exc:
+    except (WatchlistCSVError, TMDbError) as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         sys.exit(1)
 

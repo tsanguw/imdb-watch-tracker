@@ -22,23 +22,20 @@ class ConfigError(RuntimeError):
 
 @dataclass
 class Config:
-    imdb_user_id: str
     tmdb_api_key: str
     youtube_api_key: str
     region: str = "US"
     output_path: str = "data/watchlist.xlsx"
+    watchlist_csv_path: str = "data/imdb_watchlist_export.csv"
     force_youtube_recheck: bool = False
     youtube_channels_path: str = "config/youtube_channels.json"
 
 
 def load_config() -> Config:
     missing = []
-    imdb_user_id = os.environ.get("IMDB_USER_ID")
     tmdb_api_key = os.environ.get("TMDB_API_KEY")
     youtube_api_key = os.environ.get("YOUTUBE_API_KEY")
 
-    if not imdb_user_id:
-        missing.append("IMDB_USER_ID")
     if not tmdb_api_key:
         missing.append("TMDB_API_KEY")
     if not youtube_api_key:
@@ -59,11 +56,13 @@ def load_config() -> Config:
     )
 
     return Config(
-        imdb_user_id=imdb_user_id,
         tmdb_api_key=tmdb_api_key,
         youtube_api_key=youtube_api_key,
         region=os.environ.get("TMDB_REGION", "US"),
         output_path=os.environ.get("OUTPUT_PATH", "data/watchlist.xlsx"),
+        watchlist_csv_path=os.environ.get(
+            "WATCHLIST_CSV_PATH", "data/imdb_watchlist_export.csv"
+        ),
         force_youtube_recheck=force_youtube,
         youtube_channels_path=os.environ.get(
             "YOUTUBE_CHANNELS_PATH", "config/youtube_channels.json"
@@ -73,12 +72,11 @@ def load_config() -> Config:
 
 def make_session(total_retries: int = 2, backoff_factor: float = 2.0) -> requests.Session:
     """A requests.Session with a small number of retries on transient
-    errors (connection failures, 429/5xx). This is per-request retry only —
-    it will NOT retry a clean 200 response that just doesn't contain the
-    data we expect. That's a data-shape problem, not a transient one, and
-    should fail loudly instead of being masked by a retry loop. See
-    imdb_scraper.fetch_watchlist for the separate whole-fetch retry that
-    covers bot-detection-style failures.
+    errors (connection failures, 429/5xx), used for the TMDb and YouTube
+    API calls. This is per-request retry only — it will NOT retry a clean
+    200 response that just doesn't contain the data we expect. That's a
+    data-shape problem, not a transient one, and should fail loudly instead
+    of being masked by a retry loop.
     """
     session = requests.Session()
     session.headers.update(
