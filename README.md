@@ -2,16 +2,16 @@
 
 Reads a manually-exported snapshot of your IMDb watchlist, looks up
 streaming availability (TMDb) and a heuristic free-YouTube-movie match, and
-writes it all to an Excel file. Runs weekly via GitHub Actions, and can be
-refreshed on demand.
+writes it all to an Excel file. Runs weekly via a local scheduled task, and
+can be refreshed on demand.
 
-This repo is public, but your watchlist and the generated spreadsheet are
-not.
+This repo is public, but your watchlist and the generated spreadsheet stay
+entirely on your own machine — see "Keeping your data local" below.
 
 ## Tools & technologies used
 
 **Language & runtime**
-- Python 3.11+ (GitHub Actions runs 3.12)
+- Python 3.11+
 
 **Core libraries**
 - [`requests`](https://requests.readthedocs.io/) — HTTP calls to TMDb and YouTube, with retry/backoff built in
@@ -27,22 +27,32 @@ not.
 **Data source**
 - IMDb's own **watchlist CSV export** feature — a manual, authenticated export you perform yourself
 
-**Automation & hosting**
-- **GitHub Actions** — the scheduled (weekly) and on-demand (`workflow_dispatch`) pipeline runs
-- **GitHub** — this public code repo, plus a private companion repo for personal data
-- **GitHub CLI (`gh`)** — used to create the repo, authenticate, and trigger on-demand runs from a terminal
+**Automation**
+- **Windows Task Scheduler** — runs the weekly refresh locally (see `scripts/register_weekly_task.ps1`)
 - **Git** — plus a custom local pre-commit hook (`githooks/pre-commit`, installed via `scripts/install-git-hooks.sh`) that blocks commits containing `.env` or key-shaped strings
 
 **Built with**
 - [Claude Code](https://claude.com/claude-code) (Anthropic) — used interactively throughout to design, build, test, and debug this project
 
+## Keeping your data local
+
+Your watchlist and the generated spreadsheet never leave your machine.
+Both live in `data/`, which is gitignored (see `.gitignore`) — they're
+never staged, committed, or pushed to this (public) repo. There's no cloud
+component at all: no GitHub Actions, no second repo. The weekly refresh
+runs as a local Windows scheduled task (see "Automating the weekly
+refresh" below), which only works while your own PC is on — there's no
+cloud runner standing in for it, since a cloud server has no way to reach
+files that only exist on your computer.
+
 ## How it works
 
 1. **`src/watchlist_csv.py`** reads the watchlist CSV from
-   `WATCHLIST_CSV_PATH` (see "Exporting your watchlist" below). If the file
-   is missing, empty, or missing the columns it expects (IMDb's export
-   format has changed before and could again), it raises loudly and exits
-   nonzero rather than writing an empty/partial result.
+   `WATCHLIST_CSV_PATH` (`data/imdb_watchlist_export.csv` by default — see
+   "Exporting your watchlist" below). If the file is missing, empty, or
+   missing the columns it expects (IMDb's export format has changed before
+   and could again), it raises loudly and exits nonzero rather than writing
+   an empty/partial result.
 2. **`src/tmdb_client.py`** matches each title to TMDb strictly by IMDb ID
    (never by name), then pulls US watch-provider data, split into
    subscription / rent-buy / free ad-supported.
@@ -51,11 +61,12 @@ not.
    (`config/youtube_channels.json`). The YouTube API has no "free with ads"
    flag, so this is always labeled unverified in the output — check
    manually before trusting it.
-4. **`src/excel_writer.py`** overwrites the file at `OUTPUT_PATH` with rows
-   grouped into color-coded availability tiers (free options first, "Not
-   found" last), each with: Title, Year, Subscription Services, Rent/Buy,
-   Free (Ad-Supported), Free (YouTube - Unverified), Last Checked. Titles
-   with no TMDb match at all show "Not found" instead of being skipped.
+4. **`src/excel_writer.py`** overwrites the file at `OUTPUT_PATH`
+   (`data/watchlist.xlsx` by default) with rows grouped into color-coded
+   availability tiers (free options first, "Not found" last), each with:
+   Title, Year, Subscription Services, Rent/Buy, Free (Ad-Supported), Free
+   (YouTube - Unverified), Last Checked. Titles with no TMDb match at all
+   show "Not found" instead of being skipped.
 
 ## One-time setup
 
@@ -83,9 +94,7 @@ safeguard only — re-run this once after every fresh clone.
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and
    create a new project (e.g. "imdb-watch-tracker").
 2. APIs & Services → Library → enable **YouTube Data API v3**.
-3. APIs & Services → Credentials → Create Credentials → API key → restrict
-   it to "YouTube Data API v3" (skip IP restriction — GitHub Actions
-   runners don't have stable IPs).
+3. APIs & Services → Credentials → Create Credentials → API key.
 4. Note: `search.list` costs 100 quota units per call against a default
    10,000/day budget (~100 searches/day). The pipeline skips the YouTube
    search for any title that already has a confirmed free ad-supported
@@ -96,11 +105,11 @@ safeguard only — re-run this once after every fresh clone.
 1. While signed in to IMDb, open your Watchlist.
 2. Use the list's **Export** option (in the "..." / options menu) to
    download a CSV.
-3. Save it as `imdb_watchlist_export.csv` in your **private data repo's**
-   local clone — not in this repo.
-4. Commit and push *the private repo* whenever you add/remove titles — the
-   weekly job just reads whatever's currently there, it doesn't fetch a
-   fresh copy itself.
+3. Save it as `data/imdb_watchlist_export.csv` in this repo (it's
+   gitignored — it never gets committed).
+4. Re-export and overwrite that file whenever you add/remove titles — a
+   refresh only reprocesses whatever's currently there, it doesn't fetch a
+   fresh copy of your watchlist itself.
 
 This project expects at least these columns in that CSV: `Const` (the IMDb
 ID, e.g. `tt0110912`), `Title`, and `Title Type`. If IMDb has changed its
@@ -108,12 +117,14 @@ export format since this was written, the very first run will fail with a
 clear error listing the columns it actually found — update
 `REQUIRED_COLUMNS` in `src/watchlist_csv.py` to match if so.
 
-### 4. GitHub repo secrets and variables
+### 4. Local environment file
 
-In this (public) repo: **Settings → Secrets and variables → Actions**:
+```bash
+cp .env.example .env
+```
 
-- **Secrets** → add `TMDB_API_KEY`, `YOUTUBE_API_KEY`, and `DATA_REPO_PAT`.
-- **Variables** → add `DATA_REPO` (your private repo's `owner/repo-name`).
+Fill in `TMDB_API_KEY` and `YOUTUBE_API_KEY`. `.env` is gitignored, so
+these stay local.
 
 ### 5. Fill in the YouTube channel allowlist (optional but recommended)
 
@@ -126,44 +137,44 @@ pipeline still runs fine either way.
 
 ## Refreshing the tracker
 
-**Scheduled**: runs automatically every Monday at 13:00 UTC via
-`.github/workflows/update.yml`, reprocessing whatever watchlist CSV is
-currently in your private data repo and committing the updated spreadsheet
-back there. Useful even without a fresh export, since streaming
-availability for titles already on your list can change week to week. If a
-run fails, GitHub will show it as a failed Actions run (and, depending on
-your notification settings, email you) — nothing fails silently.
-
-**On demand, from GitHub**: the same workflow also has a
-`workflow_dispatch` trigger:
-
-- From the repo's **Actions** tab → "Update Watchlist" → **Run workflow**
-  (optionally check "force_youtube_recheck" to re-check YouTube even for
-  titles that already have a free ad-supported hit elsewhere).
-- Or from a terminal with the [GitHub CLI](https://cli.github.com/):
-
-  ```bash
-  gh workflow run update.yml
-  ```
-
-- Or from the GitHub mobile app (Actions tab → same workflow → Run).
-
-This uses the exact same code path as the weekly run, so it's exercised
-just as often and just as reliably.
-
-**On demand, locally**: for an instant refresh with no GitHub round-trip:
+**On demand**: just run it —
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # fill in your keys and point the paths at your private data repo clone
 python -m src.main
 ```
 
-This writes straight to your local clone of the private data repo (per
-`OUTPUT_PATH` in `.env`). Commit/push *that* repo yourself if you want the
-result to sync back for the next scheduled/on-demand run to build on, or
-just leave it local if you're only checking something once. Add
-`--force-youtube-recheck` to bypass the free-ad-supported skip logic.
+This writes to `data/watchlist.xlsx`. Add `--force-youtube-recheck` to
+bypass the free-ad-supported skip logic.
+
+### Automating the weekly refresh
+
+One-time setup, from a normal (non-elevated) PowerShell prompt:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\register_weekly_task.ps1
+```
+
+This registers a Windows scheduled task (`IMDbWatchTrackerWeeklyUpdate`)
+that runs `scripts\run_weekly_update.bat` every Monday at 9:00 AM local
+time, which in turn runs `python -m src.main` and appends its output to
+`logs\weekly_update.log` (gitignored). The task is set to start as soon as
+possible if your PC was off/asleep at the scheduled time, and to wake a
+sleeping (not powered off) PC to run on time.
+
+Useful commands afterward:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName IMDbWatchTrackerWeeklyUpdate   # last run time/result
+Start-ScheduledTask -TaskName IMDbWatchTrackerWeeklyUpdate     # run it right now
+Unregister-ScheduledTask -TaskName IMDbWatchTrackerWeeklyUpdate # remove it
+```
+
+Since this all runs locally, "failed silently" isn't really possible to
+fully rule out the way a monitored cloud job can — if your PC is asleep
+indefinitely or you never check `logs\weekly_update.log`, a failure just
+sits there unread. Check the log (or `Get-ScheduledTaskInfo`) occasionally
+if a week's data looks stale.
 
 ## Running tests
 
@@ -171,6 +182,7 @@ just leave it local if you're only checking something once. Add
 pip install -r requirements-dev.txt
 pytest
 ```
+
 ## Why this reads from a CSV instead of scraping IMDb live
 
 This project originally fetched the watchlist directly from IMDb's page.
@@ -181,24 +193,21 @@ something this project does, even against your own public data, so there's
 no way to pull the watchlist programmatically at all right now.
 
 Instead, you export your watchlist yourself (a normal, authenticated action
-in your own real browser — not scraping) and drop the resulting CSV into a
-private data repo — this code repo is public, so your watchlist never
-lives here. Everything else — TMDb
-lookups, YouTube search, the Excel output, the weekly schedule — is still
-fully automated; only the watchlist snapshot itself needs a manual refresh
-whenever you add or remove titles.
+in your own real browser — not scraping) and save the resulting CSV
+locally. Everything else — TMDb lookups, YouTube search, the Excel output,
+the weekly schedule — is still fully automated; only the watchlist snapshot
+itself needs a manual refresh whenever you add or remove titles.
 
 ## Known limitations
 
+- **The weekly task only runs while your PC can run it.** Task Scheduler
+  will start it late (or wake a sleeping machine) if it missed the exact
+  time, but if your computer is off entirely, that week's run just doesn't
+  happen — there's no cloud fallback.
 - **Watchlist freshness depends on you re-exporting.** New titles you add
-  to your IMDb watchlist won't show up until you re-export the CSV and
-  commit it to your private data repo — the weekly/on-demand runs refresh
-  streaming data for whatever's already there, they don't detect watchlist
-  changes on their own.
-- **The `DATA_REPO_PAT` token needs to stay valid.** Fine-grained PATs can
-  be given an expiration date — if you set one, you'll need to regenerate
-  and update the secret when it expires, or the workflow will start failing
-  (visibly, as a failed Actions run — not silently).
+  to your IMDb watchlist won't show up until you re-export the CSV — a
+  refresh reprocesses whatever's already in `data/imdb_watchlist_export.csv`,
+  it doesn't detect watchlist changes on its own.
 - **IMDb's CSV export format could change.** `src/watchlist_csv.py` expects
   `Const`, `Title`, and `Title Type` columns; if IMDb changes this, the run
   fails loudly with the columns it actually found rather than silently
