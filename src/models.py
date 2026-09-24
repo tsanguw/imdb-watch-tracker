@@ -28,6 +28,13 @@ class WatchlistTitle:
     tmdb_id: Optional[int] = None
     tmdb_media_type: Optional[str] = None  # "movie" or "tv"
 
+    # From IMDb's own CSV export — no extra API calls needed for these.
+    imdb_rating: Optional[float] = None
+    genres: List[str] = field(default_factory=list)
+    runtime_minutes: Optional[int] = None
+    directors: List[str] = field(default_factory=list)
+    num_votes: Optional[int] = None
+
     subscription: List[str] = field(default_factory=list)
     rent_buy: List[str] = field(default_factory=list)
     free_ad_supported: List[str] = field(default_factory=list)

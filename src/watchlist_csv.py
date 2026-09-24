@@ -49,6 +49,30 @@ def _parse_year(row: dict) -> Optional[int]:
     return None
 
 
+def _parse_float(value: Optional[str]) -> Optional[float]:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _parse_int(value: Optional[str]) -> Optional[int]:
+    value = (value or "").strip().replace(",", "")
+    if not value.isdigit():
+        return None
+    return int(value)
+
+
+def _parse_list(value: Optional[str]) -> List[str]:
+    value = (value or "").strip()
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def load_watchlist_csv(path: str) -> List[WatchlistTitle]:
     file_path = Path(path)
     if not file_path.exists():
@@ -95,6 +119,11 @@ def load_watchlist_csv(path: str) -> List[WatchlistTitle]:
                     title=title_text,
                     year=_parse_year(row),
                     title_type=title_type,
+                    imdb_rating=_parse_float(row.get("IMDb Rating")),
+                    genres=_parse_list(row.get("Genres")),
+                    runtime_minutes=_parse_int(row.get("Runtime (mins)")),
+                    directors=_parse_list(row.get("Directors")),
+                    num_votes=_parse_int(row.get("Num Votes")),
                 )
             )
 

@@ -105,6 +105,13 @@ def main() -> None:
     except (WatchlistCSVError, TMDbError) as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         sys.exit(1)
+    except PermissionError as exc:
+        print(
+            f"FAILED: Could not write the output file ({exc}). If it's open "
+            "in Excel, close it and try again.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
