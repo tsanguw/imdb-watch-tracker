@@ -1,8 +1,6 @@
 """Entry point: read watchlist CSV -> enrich -> write Excel.
 
-Run via `python -m src.main` (locally, with a .env file — see
-.env.example) or from the GitHub Actions workflow (.github/workflows/update.yml),
-which sets the same environment variables from repo secrets/variables.
+Run via `python -m src.main` with a .env file (see .env.example).
 """
 from __future__ import annotations
 
@@ -67,7 +65,7 @@ def run(cfg: config.Config) -> None:
         # Save YouTube API quota: skip the (least reliable) YouTube search
         # for anything that already has a confirmed free ad-supported
         # option from TMDb, unless the caller explicitly asked to
-        # force-recheck (workflow_dispatch input / --force-youtube-recheck).
+        # force-recheck (--force-youtube-recheck).
         already_free = bool(title.free_ad_supported)
         if already_free and not cfg.force_youtube_recheck:
             continue

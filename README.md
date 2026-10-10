@@ -2,8 +2,8 @@
 
 Reads a manually-exported snapshot of your IMDb watchlist, looks up
 streaming availability (TMDb) and a heuristic free-YouTube-movie match, and
-writes it all to an Excel file. Runs weekly via a local scheduled task, and
-can be refreshed on demand.
+writes it all to an Excel file. Run it on demand whenever you want fresh
+data.
 
 This repo is public, but your watchlist and the generated spreadsheet stay
 entirely on your own machine — see "Keeping your data local" below.
@@ -27,8 +27,7 @@ entirely on your own machine — see "Keeping your data local" below.
 **Data source**
 - IMDb's own **watchlist CSV export** feature — a manual, authenticated export you perform yourself
 
-**Automation**
-- **Windows Task Scheduler** — runs the weekly refresh locally (see `scripts/register_weekly_task.ps1`)
+**Tooling**
 - **Git** — plus a custom local pre-commit hook (`githooks/pre-commit`, installed via `scripts/install-git-hooks.sh`) that blocks commits containing `.env` or key-shaped strings
 
 **Built with**
@@ -39,11 +38,8 @@ entirely on your own machine — see "Keeping your data local" below.
 Your watchlist and the generated spreadsheet never leave your machine.
 Both live in `data/`, which is gitignored (see `.gitignore`) — they're
 never staged, committed, or pushed to this (public) repo. There's no cloud
-component at all: no GitHub Actions, no second repo. The weekly refresh
-runs as a local Windows scheduled task (see "Automating the weekly
-refresh" below), which only works while your own PC is on — there's no
-cloud runner standing in for it, since a cloud server has no way to reach
-files that only exist on your computer.
+component at all: no GitHub Actions, no second repo, no scheduled job.
+You run it yourself, right after exporting a fresh watchlist.
 
 ## How it works
 
@@ -107,9 +103,9 @@ safeguard only — re-run this once after every fresh clone.
    download a CSV.
 3. Save it as `data/imdb_watchlist_export.csv` in this repo (it's
    gitignored — it never gets committed).
-4. Re-export and overwrite that file whenever you add/remove titles — a
-   refresh only reprocesses whatever's currently there, it doesn't fetch a
-   fresh copy of your watchlist itself.
+4. Re-export and overwrite that file whenever you want fresh data, then
+   run the tracker (below). A run only reprocesses whatever's currently in
+   the file, it doesn't fetch a fresh copy of your watchlist itself.
 
 This project expects at least these columns in that CSV: `Const` (the IMDb
 ID, e.g. `tt0110912`), `Title`, and `Title Type`. If IMDb has changed its
@@ -137,44 +133,19 @@ pipeline still runs fine either way.
 
 ## Refreshing the tracker
 
-**On demand**: just run it —
+Export a fresh watchlist CSV (see above), then run:
 
 ```bash
 pip install -r requirements.txt
 python -m src.main
 ```
 
-This writes to `data/watchlist.xlsx`. Add `--force-youtube-recheck` to
-bypass the free-ad-supported skip logic.
+This writes to `data/watchlist.xlsx` (close it in Excel first). Add
+`--force-youtube-recheck` to bypass the free-ad-supported skip logic.
 
-### Automating the weekly refresh
-
-One-time setup, from a normal (non-elevated) PowerShell prompt:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\register_weekly_task.ps1
-```
-
-This registers a Windows scheduled task (`IMDbWatchTrackerWeeklyUpdate`)
-that runs `scripts\run_weekly_update.bat` every Monday at 9:00 AM local
-time, which in turn runs `python -m src.main` and appends its output to
-`logs\weekly_update.log` (gitignored). The task is set to start as soon as
-possible if your PC was off/asleep at the scheduled time, and to wake a
-sleeping (not powered off) PC to run on time.
-
-Useful commands afterward:
-
-```powershell
-Get-ScheduledTaskInfo -TaskName IMDbWatchTrackerWeeklyUpdate   # last run time/result
-Start-ScheduledTask -TaskName IMDbWatchTrackerWeeklyUpdate     # run it right now
-Unregister-ScheduledTask -TaskName IMDbWatchTrackerWeeklyUpdate # remove it
-```
-
-Since this all runs locally, "failed silently" isn't really possible to
-fully rule out the way a monitored cloud job can — if your PC is asleep
-indefinitely or you never check `logs\weekly_update.log`, a failure just
-sits there unread. Check the log (or `Get-ScheduledTaskInfo`) occasionally
-if a week's data looks stale.
+There's deliberately no scheduled job: the watchlist CSV has to be
+exported by hand, so a scheduled run would only re-check the same stale
+list.
 
 ## Running tests
 
@@ -194,19 +165,15 @@ no way to pull the watchlist programmatically at all right now.
 
 Instead, you export your watchlist yourself (a normal, authenticated action
 in your own real browser — not scraping) and save the resulting CSV
-locally. Everything else — TMDb lookups, YouTube search, the Excel output,
-the weekly schedule — is still fully automated; only the watchlist snapshot
-itself needs a manual refresh whenever you add or remove titles.
+locally. Everything else — TMDb lookups, YouTube search, the Excel output —
+is automated by the run; only the watchlist snapshot itself needs a manual
+export.
 
 ## Known limitations
 
-- **The weekly task only runs while your PC can run it.** Task Scheduler
-  will start it late (or wake a sleeping machine) if it missed the exact
-  time, but if your computer is off entirely, that week's run just doesn't
-  happen — there's no cloud fallback.
 - **Watchlist freshness depends on you re-exporting.** New titles you add
   to your IMDb watchlist won't show up until you re-export the CSV — a
-  refresh reprocesses whatever's already in `data/imdb_watchlist_export.csv`,
+  run reprocesses whatever's already in `data/imdb_watchlist_export.csv`,
   it doesn't detect watchlist changes on its own.
 - **IMDb's CSV export format could change.** `src/watchlist_csv.py` expects
   `Const`, `Title`, and `Title Type` columns; if IMDb changes this, the run

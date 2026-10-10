@@ -12,8 +12,8 @@ Instead: export your watchlist yourself, as a normal signed-in action in
 your own real browser (IMDb watchlist page -> "..." menu -> Export), and
 save the resulting CSV to the path this module reads (see config.py /
 README). Everything downstream — TMDb lookups, YouTube search, the Excel
-output, the weekly schedule — still runs automatically; only the watchlist
-snapshot itself needs a manual refresh when you add or remove titles.
+output — still runs automatically; only the watchlist snapshot itself
+needs a manual export.
 
 IMDb's exported CSV column set has changed over the years and could change
 again, so this fails loudly (raises WatchlistCSVError) and reports the
